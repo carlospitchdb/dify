@@ -55,9 +55,6 @@ x-shared-env: &shared-api-worker-env
   WEAVIATE_ENDPOINT: ${WEAVIATE_ENDPOINT:-http://weaviate:8090}
   WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:-WVF5YThaHlkYwhGUSmCRgsX3tD5ngdN8pkih}
   WEAVIATE_GRPC_ENDPOINT: ${WEAVIATE_GRPC_ENDPOINT:-grpc://weaviate:50051}
-  # SSRF Proxy
-  SSRF_PROXY_HTTP_URL: ${SSRF_PROXY_HTTP_URL:-http://ssrf_proxy:3128}
-  SSRF_PROXY_HTTPS_URL: ${SSRF_PROXY_HTTPS_URL:-http://ssrf_proxy:3128}
   # Code Execution
   CODE_EXECUTION_ENDPOINT: ${CODE_EXECUTION_ENDPOINT:-http://sandbox:8194}
   CODE_EXECUTION_API_KEY: ${CODE_EXECUTION_API_KEY:-dify-sandbox}
@@ -124,7 +121,6 @@ services:
     volumes:
       - ./volumes/app/storage:/app/api/storage
     networks:
-      - ssrf_proxy_network
       - coolify
       - default
 
@@ -144,7 +140,6 @@ services:
     volumes:
       - ./volumes/app/storage:/app/api/storage
     networks:
-      - ssrf_proxy_network
       - coolify
       - default
 
@@ -161,13 +156,12 @@ services:
       redis:
         condition: service_started
     networks:
-      - ssrf_proxy_network
       - coolify
       - default
 
   # Frontend web application
   web:
-    image: langgenius/dify-web:1.11.4
+    image: langgenius/dify-web:latest
     restart: always
     environment:
       CONSOLE_API_URL: ${CONSOLE_API_URL:-}
@@ -176,6 +170,7 @@ services:
       TEXT_GENERATION_TIMEOUT_MS: ${TEXT_GENERATION_TIMEOUT_MS:-60000}
       MARKETPLACE_API_URL: ${MARKETPLACE_API_URL:-https://marketplace.dify.ai}
       MARKETPLACE_URL: ${MARKETPLACE_URL:-https://marketplace.dify.ai}
+      SERVICE_FQDN_WEB_3000: ${SERVICE_FQDN_WEB_3000:-}
     networks:
       - coolify
       - default
@@ -204,8 +199,6 @@ services:
       GIN_MODE: ${SANDBOX_GIN_MODE:-release}
       WORKER_TIMEOUT: ${SANDBOX_WORKER_TIMEOUT:-15}
       ENABLE_NETWORK: ${SANDBOX_ENABLE_NETWORK:-true}
-      HTTP_PROXY: ${SANDBOX_HTTP_PROXY:-http://ssrf_proxy:3128}
-      HTTPS_PROXY: ${SANDBOX_HTTPS_PROXY:-http://ssrf_proxy:3128}
       SANDBOX_PORT: ${SANDBOX_PORT:-8194}
     volumes:
       - ./volumes/sandbox/dependencies:/dependencies
@@ -213,7 +206,7 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8194/health"]
     networks:
-      - ssrf_proxy_network
+      - default
 
   # Plugin daemon
   plugin_daemon:
@@ -239,29 +232,6 @@ services:
       - ./volumes/plugin_daemon:/app/storage
     networks:
       - coolify
-      - default
-
-  # SSRF Proxy server
-  ssrf_proxy:
-    image: ubuntu/squid:latest
-    restart: always
-    volumes:
-      - ./ssrf_proxy/squid.conf.template:/etc/squid/squid.conf.template
-      - ./ssrf_proxy/docker-entrypoint.sh:/docker-entrypoint-mount.sh
-    entrypoint:
-      [
-        "sh",
-        "-c",
-        "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh",
-      ]
-    environment:
-      HTTP_PORT: ${SSRF_HTTP_PORT:-3128}
-      COREDUMP_DIR: ${SSRF_COREDUMP_DIR:-/var/spool/squid}
-      REVERSE_PROXY_PORT: ${SSRF_REVERSE_PROXY_PORT:-8194}
-      SANDBOX_HOST: ${SSRF_SANDBOX_HOST:-sandbox}
-      SANDBOX_PORT: ${SANDBOX_PORT:-8194}
-    networks:
-      - ssrf_proxy_network
       - default
 
   # Nginx reverse proxy
@@ -333,7 +303,3 @@ networks:
   # External coolify-proxy network for connecting to Supabase
   coolify:
     external: true
-  # Internal network between sandbox, api and ssrf_proxy
-  ssrf_proxy_network:
-    driver: bridge
-    internal: true
